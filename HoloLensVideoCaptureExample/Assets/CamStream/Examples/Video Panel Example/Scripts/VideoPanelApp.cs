@@ -20,6 +20,11 @@ public class VideoPanelApp : MonoBehaviour
     VideoPanel _videoPanelUI;
     VideoCapture _videoCapture;
 
+	int		FrameCounter = 0;
+	float	LastFrameCountTime = 0;
+
+	public UnityEngine.UI.Text	FramCounterText;
+
     void Start()
     {
         //Call this in Start() to ensure that the CameraStreamHelper is already "Awake".
@@ -59,6 +64,10 @@ public class VideoPanelApp : MonoBehaviour
         cameraParams.frameRate = Mathf.RoundToInt(frameRate);
         cameraParams.pixelFormat = CapturePixelFormat.BGRA32;
 
+		cameraParams.enableHolograms = true;
+		cameraParams.enableRecordingIndicator = false;
+		cameraParams.enableVideoStabilization = false;
+
         UnityEngine.WSA.Application.InvokeOnAppThread(() => { _videoPanelUI.SetResolution(_resolution.width, _resolution.height); }, false);
 
         videoCapture.StartVideoModeAsync(cameraParams, OnVideoModeStarted);
@@ -77,7 +86,7 @@ public class VideoPanelApp : MonoBehaviour
 
     void OnFrameSampleAcquired(VideoCaptureSample sample)
     {
-        //When copying the bytes out of the buffer, you must supply a byte[] that is appropriately sized.
+		//When copying the bytes out of the buffer, you must supply a byte[] that is appropriately sized.
         //You can reuse this byte[] until you need to resize it (for whatever reason).
         if (_latestImageBytes == null || _latestImageBytes.Length < sample.dataLength)
         {
@@ -91,5 +100,25 @@ public class VideoPanelApp : MonoBehaviour
         {
             _videoPanelUI.SetBytes(_latestImageBytes);
         }, false);
+
+		FrameCounter++;
     }
+
+	void Update()
+	{
+		float TimeSinceFrameCount = Time.time - LastFrameCountTime;
+		if (TimeSinceFrameCount >= 1.0f)
+		{
+			float FrameCountF = FrameCounter / TimeSinceFrameCount;
+			string FrameCountString = "" + FrameCountF.ToString("0.00") + "fps";
+			if ( FramCounterText!= null )
+			{
+				FramCounterText.text = FrameCountString;
+			}
+			Debug.Log(FrameCountString);
+			FrameCounter = 0;
+			LastFrameCountTime = Time.time;
+		}
+
+	}
 }
