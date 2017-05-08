@@ -1,11 +1,34 @@
-﻿//  
-// Copyright (c) 2017 Vulcan, Inc. All rights reserved.  
-// Licensed under the Apache 2.0 license. See LICENSE file in the project root for full license information.
-//
-
-using UnityEngine;
-
+﻿using UnityEngine;
 using HoloLensCameraStream;
+using UnityEngine.Events;
+
+
+[System.Serializable]
+public class UnityEvent_ImageWidthHeight : UnityEvent <byte[],TextureFormat,int,int> {}
+
+
+public class BytePool
+{
+	static byte[]	Buffer;
+
+	public static byte[]	Alloc(int Size)
+	{
+		if ( Buffer != null )
+			if ( Buffer.Length != Size )
+				Buffer = null;
+
+		if ( Buffer == null )
+			Buffer = new byte[Size];
+
+		return Buffer;
+	}
+
+	public static void		Release(byte[] ReleasedBuffer)
+	{
+
+	}	
+};
+
 
 /// <summary>
 /// This example gets the video frames at 30 fps and displays them on a Unity texture,
@@ -13,26 +36,28 @@ using HoloLensCameraStream;
 /// </summary>
 public class VideoPanelApp : MonoBehaviour
 {
-    byte[] _latestImageBytes;
+	public UnityEvent_ImageWidthHeight		OnNewFrameMonoThread;
+	public UnityEvent_ImageWidthHeight		OnNewFrame;
+	public UnityEvent						OnError;
+
     HoloLensCameraStream.Resolution _resolution;
-
-    //"Injected" objects.
-    VideoPanel _videoPanelUI;
+	
     VideoCapture _videoCapture;
-
-	int		FrameCounter = 0;
-	float	LastFrameCountTime = 0;
-
-	public UnityEngine.UI.Text	FramCounterText;
 
     void Start()
     {
         //Call this in Start() to ensure that the CameraStreamHelper is already "Awake".
-        CameraStreamHelper.Instance.GetVideoCaptureAsync(OnVideoCaptureCreated);
-        //You could also do this "shortcut":
-        //CameraStreamManager.Instance.GetVideoCaptureAsync(v => videoCapture = v);
-
-        _videoPanelUI = GameObject.FindObjectOfType<VideoPanel>();
+		try
+		{
+	        CameraStreamHelper.Instance.GetVideoCaptureAsync(OnVideoCaptureCreated);
+			//You could also do this "shortcut":
+			//CameraStreamManager.Instance.GetVideoCaptureAsync(v => videoCapture = v);
+		}
+		catch(System.Exception e)
+		{
+			Debug.LogException(e);
+			OnError.Invoke();
+		}
     }
 
     private void OnDestroy()
@@ -49,6 +74,7 @@ public class VideoPanelApp : MonoBehaviour
         if (videoCapture == null)
         {
             Debug.LogError("Did not find a video capture object. You may not be using the HoloLens.");
+			OnError.Invoke();
             return;
         }
         
@@ -68,7 +94,7 @@ public class VideoPanelApp : MonoBehaviour
 		cameraParams.enableRecordingIndicator = false;
 		cameraParams.enableVideoStabilization = false;
 
-        UnityEngine.WSA.Application.InvokeOnAppThread(() => { _videoPanelUI.SetResolution(_resolution.width, _resolution.height); }, false);
+       // UnityEngine.WSA.Application.InvokeOnAppThread(() => { _videoPanelUI.SetResolution(_resolution.width, _resolution.height); }, false);
 
         videoCapture.StartVideoModeAsync(cameraParams, OnVideoModeStarted);
     }
@@ -78,6 +104,7 @@ public class VideoPanelApp : MonoBehaviour
         if (result.success == false)
         {
             Debug.LogWarning("Could not start video mode.");
+			OnError.Invoke();
             return;
         }
 
@@ -86,39 +113,17 @@ public class VideoPanelApp : MonoBehaviour
 
     void OnFrameSampleAcquired(VideoCaptureSample sample)
     {
-		//When copying the bytes out of the buffer, you must supply a byte[] that is appropriately sized.
-        //You can reuse this byte[] until you need to resize it (for whatever reason).
-        if (_latestImageBytes == null || _latestImageBytes.Length < sample.dataLength)
-        {
-            _latestImageBytes = new byte[sample.dataLength];
-        }
-        sample.CopyRawImageDataIntoBuffer(_latestImageBytes);
+		var Bytes = BytePool.Alloc( sample.dataLength );
+        sample.CopyRawImageDataIntoBuffer(Bytes);
         sample.Dispose();
 
-        //This is where we actually use the image data
+		//	immediate callback
+		OnNewFrame.Invoke( Bytes, TextureFormat.BGRA32, _resolution.width, _resolution.height );
+ 
+		//	unity-happy callback
         UnityEngine.WSA.Application.InvokeOnAppThread(() =>
         {
-            _videoPanelUI.SetBytes(_latestImageBytes);
+			OnNewFrameMonoThread.Invoke( Bytes, TextureFormat.BGRA32, _resolution.width, _resolution.height );
         }, false);
-
-		FrameCounter++;
     }
-
-	void Update()
-	{
-		float TimeSinceFrameCount = Time.time - LastFrameCountTime;
-		if (TimeSinceFrameCount >= 1.0f)
-		{
-			float FrameCountF = FrameCounter / TimeSinceFrameCount;
-			string FrameCountString = "" + FrameCountF.ToString("0.00") + "fps";
-			if ( FramCounterText!= null )
-			{
-				FramCounterText.text = FrameCountString;
-			}
-			Debug.Log(FrameCountString);
-			FrameCounter = 0;
-			LastFrameCountTime = Time.time;
-		}
-
-	}
 }

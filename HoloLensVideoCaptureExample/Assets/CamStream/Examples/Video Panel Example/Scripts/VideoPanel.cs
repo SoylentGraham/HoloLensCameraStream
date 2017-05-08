@@ -10,16 +10,18 @@ public class VideoPanel : MonoBehaviour
 {
     public RawImage rawImage;
 
-    public void SetResolution(int width, int height)
+	Texture2D	ImageTexture;
+	
+    public void SetBytes(byte[] Image,TextureFormat Format,int Width,int Height)
     {
-        var texture = new Texture2D(width, height, TextureFormat.BGRA32, false);
-        rawImage.texture = texture;
-    }
-
-    public void SetBytes(byte[] image)
-    {
-        var texture = rawImage.texture as Texture2D;
-        texture.LoadRawTextureData(image); //TODO: Should be able to do this: texture.LoadRawTextureData(pointerToImage, 1280 * 720 * 4);
-        texture.Apply();
+		if ( ImageTexture == null )
+		{
+			ImageTexture = new Texture2D( Width, Height, Format, false );
+			rawImage.texture = ImageTexture;
+		}
+				
+		//TODO: Should be able to do this: texture.LoadRawTextureData(pointerToImage, 1280 * 720 * 4);
+        ImageTexture.LoadRawTextureData(Image); 
+        ImageTexture.Apply();
     }
 }
