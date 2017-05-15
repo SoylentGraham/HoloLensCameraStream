@@ -1,7 +1,11 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+
+#if !WINDOWS_UWP
 using WebSocketSharp;
+#endif
+
 using UnityEngine.Events;
 
 
@@ -64,7 +68,6 @@ public class SendWebsocketFrame : MonoBehaviour {
 	public string[] _hosts;
 	private int			_currentHostIndex = -1;
 		
-	string LastConnectedHost;
 
 	[Range(0,10)]
 	public float	RetryTimeSecs = 5;
@@ -119,26 +122,26 @@ public class SendWebsocketFrame : MonoBehaviour {
 		
 		var Host = GetCurrentHost();
 		SetStatus("Connecting to " + Host + "...");
-		LastConnectedHost = null;
 
         Debug.Log("Trying to connect to: " + Host );
+		/*
+		var NewSocket = new WebSocket("ws://" + Host);
+		NewSocket.Log.Level = LogLevel.TRACE;
 
-		Socket = new WebSocket("ws://" + Host);
-        Socket.Log.Level = LogLevel.TRACE;
-
-		Socket.OnOpen += (sender, e) => {
+		NewSocket.OnOpen += (sender, e) => {
             QueueJob (() => {
+				Socket = NewSocket;
 				OnConnected();
 			});
 		};
 
-		Socket.OnError += (sender, e) => {
+		NewSocket.OnError += (sender, e) => {
             QueueJob (() => {
 				OnError( e.Message, true );
 			});
 		};
 
-		Socket.OnClose += (sender, e) => {
+		NewSocket.OnClose += (sender, e) => {
 			if ( LastConnectedHost != null ){
 				QueueJob (() => {
 					SetStatus("Disconnected from " + LastConnectedHost );
@@ -148,7 +151,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 			OnError( "Closed", true);
 		};
 
-		Socket.OnMessage += (sender, e) => {
+		NewSocket.OnMessage += (sender, e) => {
 
 			if ( e.Type == Opcode.TEXT )
 				OnTextMessage( e.Data );
@@ -159,7 +162,8 @@ public class SendWebsocketFrame : MonoBehaviour {
 		};
 
 		//Socket.Connect ();
-        Socket.ConnectAsync ();
+        NewSocket.ConnectAsync ();
+		*/
 	}
 
 	void Update(){
@@ -221,7 +225,6 @@ public class SendWebsocketFrame : MonoBehaviour {
 	}
 
 	void OnConnected(){
-		LastConnectedHost = GetCurrentHost ();
 		SetStatus ("Connected");
 
 		if ( IsServer )
