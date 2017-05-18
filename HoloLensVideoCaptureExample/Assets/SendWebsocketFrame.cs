@@ -84,7 +84,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 	public float	PingTimeSecs = 10;
 	private float	PingTimeout = 1;
 
-	
+	List<byte[]>	JpegQueue;
 
     public void setHost(string host) {
         _hosts = new string[1]{ host };
@@ -211,7 +211,42 @@ public class SendWebsocketFrame : MonoBehaviour {
 				PingTimeout = PingTimeSecs;
 			}
 		}
+
+		if ( JpegQueue == null )
+			JpegQueue = new List<byte[]>();
+
+		SendNextJpeg();
 	}
+
+	void QueueJpeg(byte[] Jpeg)
+	{
+		if ( JpegQueue == null )
+			JpegQueue = new List<byte[]>();
+
+		lock (JpegQueue)
+		{
+			JpegQueue.Add(Jpeg);
+		}
+	}
+
+	void SendNextJpeg()
+	{
+		if ( Socket == null )
+			JpegQueue.Clear();
+
+		if ( JpegQueue.Count == 0 )
+			return;
+
+		byte[] Jpeg = null;
+		lock(JpegQueue)
+		{
+			Jpeg = JpegQueue[0];
+			JpegQueue.RemoveAt(0);
+		};
+
+		Socket.SendAsync( Jpeg, (Completed)=> { } );
+	}
+
 
 	void RegisterClient(){
 		SetStatus ("Registering client");
@@ -240,31 +275,6 @@ public class SendWebsocketFrame : MonoBehaviour {
 
 	void OnTextMessage(string Message){
 		Debug.Log ("Message: " + Message);
-
-		//	try and parse json message
-		try{
-			JsonCommand Command = JsonUtility.FromJson<JsonCommand>( Message );
-			/*
-			if ( Command.Command == JsonCommand_Play.CommandString )
-			{
-				HandleCommand( JsonUtility.FromJson<JsonCommand_Play>( Message ) );
-			}
-			else if ( Command.Command == JsonCommand_Stop.CommandString )
-			{
-				HandleCommand( JsonUtility.FromJson<JsonCommand_Stop>( Message ) );
-			}
-			else if ( Command.Command == JsonCommand_SetStatus.CommandString )
-			{
-				HandleCommand( JsonUtility.FromJson<JsonCommand_SetStatus>( Message ) );
-			}
-			else
-			*/
-			{
-				throw new System.Exception("Unhandled command " + Command.Command );
-			}
-		}catch( System.Exception e ) {
-			Debug.LogError ("Error with websocket command: " + e.Message);
-		}
 	}
 
 	void OnBinaryMessage(byte[] Message){
@@ -361,32 +371,43 @@ public class SendWebsocketFrame : MonoBehaviour {
 
 	public void SendBytes(byte[] Image,TextureFormat Format,int Width,int Height)
     {
-		if ( ImageTexture == null )
-		{
-			ImageTexture = new Texture2D( Width, Height, Format, false );
-		}
-
-		ImageTexture.LoadRawTextureData(Image);
-
 		Connect();
+		if ( Socket == null )
+			return;
 
-		if ( Socket!= null )
+		if ( JpegQueue == null )
+			JpegQueue = new List<byte[]>();
+
+		Socket.Send("New image " + Width + "x" + Height + " format=" + Format + " QueueSize:" + JpegQueue.Count );
+
+		bool SendTestJpeg = false;
+		bool EncodeWithPopEncode = true;
+
+		if (SendTestJpeg)
 		{
-			Socket.Send("New image " + ImageTexture.width + "x" + ImageTexture.height );
-
-#if WINDOWS_UWP
-			Socket.SendAsync(jpeg2x2, (Success)=> { } );
-#else
-			//	gr: this halts on hololens?
+			QueueJpeg( jpeg2x2 );
+		}
+		else if ( EncodeWithPopEncode )
+		{
+			//	gr: executing this on the thread made the display disapear?? but it still worked at a decent frame rate (watching on viewer)
+			System.Action EncodeJpegAndSend = () =>
+			{
+				var Jpeg = PopEncodeJpeg.EncodeToJpeg( Image, Width, Height, 4, true );
+				QueueJpeg( Jpeg );
+			};
+			System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend ); 
+		}
+		else
+		{
+			//	these go wrong on hololens and crash the app
+			if ( ImageTexture == null )
+			{
+				ImageTexture = new Texture2D( Width, Height, Format, false );
+			}
+			ImageTexture.LoadRawTextureData(Image);
 			//var Jpeg = ImageTexture.EncodeToJPG(50);
 			var Jpeg = ImageTexture.EncodeToPNG();
-
-			//QueueJob( ()=>
-			{
-				Socket.SendAsync(Jpeg, (Success)=> { } );
-			}
-#endif
-		//});
+			QueueJpeg( Jpeg );
 		}
     }
 
