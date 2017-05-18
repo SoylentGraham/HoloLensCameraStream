@@ -117,7 +117,7 @@ namespace WebSocketSharp
 		}
 
 	
-		public async Task	Send(string message)
+		async Task	SendAsyncTask(string message)
 		{
 			//	"flush before changing type"
 			await MessageWriter.FlushAsync();
@@ -126,7 +126,7 @@ namespace WebSocketSharp
 			await MessageWriter.StoreAsync();
 		}
 
-		public async Task	Send(byte[] Data)
+		async Task	SendAsyncTask(byte[] Data)
 		{
 			//	"flush before changing type"
 			await MessageWriter.FlushAsync();
@@ -135,17 +135,34 @@ namespace WebSocketSharp
 			await MessageWriter.StoreAsync();
 		}
 
-		public async void SendAsync(string data, System.Action<bool> completed)
+		public void Send(string data)
 		{
-			await Send(data);
-			completed.Invoke(true);
+			var SendTask = SendAsyncTask( data );
+			SendTask.Wait();
 		}
 
-		public async void SendAsync(byte[] data, System.Action<bool> completed)
+		public void Send(byte[] data)
 		{
-			await Send(data);
-			completed.Invoke(true);
+			var SendTask = SendAsyncTask( data );
+			SendTask.Wait();
 		}
+
+		public void SendAsync(string data, System.Action<bool> completed)
+		{
+			var SendTask = SendAsyncTask( data );
+
+			//	todo: launch a task, wait and then send completed
+			//completed.Invoke(true);
+		}
+
+		public void SendAsync(byte[] data, System.Action<bool> completed)
+		{
+			var SendTask = SendAsyncTask( data );
+
+			//await Send_Async(data);
+			//completed.Invoke(true);
+		}
+		
 		
 		public void ConnectAsync ()
 		{
