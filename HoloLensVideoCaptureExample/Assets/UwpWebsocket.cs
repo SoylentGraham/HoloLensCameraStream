@@ -105,7 +105,9 @@ namespace WebSocketSharp
 
 			if (InputMessage.MessageType == SocketMessageType.Utf8)
 			{
-				OutputMessage = new MessageEventArgs( InputMessage.ToString() );
+				var stringLength = InputMessage.GetDataReader().UnconsumedBufferLength;
+                string receivedMessage = InputMessage.GetDataReader().ReadString(stringLength);
+				OutputMessage = new MessageEventArgs( receivedMessage );
 			}
 			else
 			{
