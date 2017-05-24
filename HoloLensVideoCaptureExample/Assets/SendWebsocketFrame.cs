@@ -62,7 +62,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 	Texture2D	ImageTexture;
 
 
-
+	bool		DebugUpdate = false;
 	
 	public string[] _hosts;
 	private int			_currentHostIndex = -1;
@@ -193,14 +193,17 @@ public class SendWebsocketFrame : MonoBehaviour {
 	
 		//	commands to execute from other thread
 		if (JobQueue != null) {
-			if (JobQueue.Count > 0) {
-				Debug.Log("Executing job 0/" + JobQueue.Count);
+			while (JobQueue.Count > 0) {
+
+				if ( DebugUpdate )
+					Debug.Log("Executing job 0/" + JobQueue.Count);
 				var Job = JobQueue [0];
 				JobQueue.RemoveAt (0);
 				try
 				{
 					Job.Invoke ();
-					Debug.Log("Job Done.");
+					if ( DebugUpdate )
+						Debug.Log("Job Done.");
 				}
 				catch(System.Exception e)
 				{
@@ -226,7 +229,11 @@ public class SendWebsocketFrame : MonoBehaviour {
 
 		try
 		{
+			while ( JpegQueue.Count > 0 )
+				SendNextJpeg();
 			SendNextJpeg();
+			SendNextJpeg();
+			ClearJpegQueue();
 		}
 		catch(System.Exception e)
 		{
@@ -242,6 +249,14 @@ public class SendWebsocketFrame : MonoBehaviour {
 		lock (JpegQueue)
 		{
 			JpegQueue.Add(Jpeg);
+		}
+	}
+
+	void ClearJpegQueue()
+	{
+		lock(JpegQueue)
+		{
+			JpegQueue.Clear();
 		}
 	}
 
@@ -266,9 +281,13 @@ public class SendWebsocketFrame : MonoBehaviour {
 			JpegQueue.RemoveAt(0);
 		};
 
-		Debug.Log("sending jpeg x" + Jpeg.Length);
+		if ( DebugUpdate )
+			Debug.Log("sending jpeg x" + Jpeg.Length);
+
 		Socket.SendAsync( Jpeg, (Completed)=> { } );
-		Debug.Log("Done send async jpeg x" + Jpeg.Length);
+
+		if ( DebugUpdate )
+			Debug.Log("Done send async jpeg x" + Jpeg.Length);
 	}
 
 
@@ -406,6 +425,9 @@ public class SendWebsocketFrame : MonoBehaviour {
 
 		bool SendTestJpeg = false;
 		bool EncodeWithPopEncode = true;
+		bool EncodeOnMonoThread = false;
+		bool EncodeViaParallelTask = false;
+		bool EncodeViaThreadPool = true;
 
 		if (SendTestJpeg)
 		{
@@ -419,8 +441,23 @@ public class SendWebsocketFrame : MonoBehaviour {
 				var Jpeg = PopEncodeJpeg.EncodeToJpeg( Image, Width, Height, 4, true );
 				QueueJpeg( Jpeg );
 			};
-			//System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend ); 
-			QueueJob( EncodeJpegAndSend );
+
+			if ( EncodeOnMonoThread )
+			{
+				QueueJob( EncodeJpegAndSend );
+			}
+			else if ( EncodeViaParallelTask )
+			{
+				System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend );
+			}
+			else if ( EncodeViaThreadPool )
+			{
+				Windows.System.Threading.ThreadPool.RunAsync( (workitem)=> {	EncodeJpegAndSend(); } );
+			}
+			else
+			{
+				//	dunno how to encode
+			}
 		}
 		else
 		{
