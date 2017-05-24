@@ -193,10 +193,19 @@ public class SendWebsocketFrame : MonoBehaviour {
 	
 		//	commands to execute from other thread
 		if (JobQueue != null) {
-			while (JobQueue.Count > 0) {
+			if (JobQueue.Count > 0) {
+				Debug.Log("Executing job 0/" + JobQueue.Count);
 				var Job = JobQueue [0];
 				JobQueue.RemoveAt (0);
-				Job.Invoke ();
+				try
+				{
+					Job.Invoke ();
+					Debug.Log("Job Done.");
+				}
+				catch(System.Exception e)
+				{
+					Debug.Log("Job invoke exception: " + e.Message );
+				}
 			}
 		}
 
@@ -215,7 +224,14 @@ public class SendWebsocketFrame : MonoBehaviour {
 		if ( JpegQueue == null )
 			JpegQueue = new List<byte[]>();
 
-		SendNextJpeg();
+		try
+		{
+			SendNextJpeg();
+		}
+		catch(System.Exception e)
+		{
+			Debug.Log("SendNextJpeg exception: " + e.Message );
+		}
 	}
 
 	void QueueJpeg(byte[] Jpeg)
@@ -231,11 +247,17 @@ public class SendWebsocketFrame : MonoBehaviour {
 
 	void SendNextJpeg()
 	{
-		if ( Socket == null )
-			JpegQueue.Clear();
-
-		if ( JpegQueue.Count == 0 )
+		if ( JpegQueue == null )
 			return;
+
+		lock (JpegQueue)
+		{
+			if ( Socket == null )
+				JpegQueue.Clear();
+
+			if ( JpegQueue.Count == 0 )
+				return;
+		}
 
 		byte[] Jpeg = null;
 		lock(JpegQueue)
@@ -244,7 +266,9 @@ public class SendWebsocketFrame : MonoBehaviour {
 			JpegQueue.RemoveAt(0);
 		};
 
+		Debug.Log("sending jpeg x" + Jpeg.Length);
 		Socket.SendAsync( Jpeg, (Completed)=> { } );
+		Debug.Log("Done send async jpeg x" + Jpeg.Length);
 	}
 
 
@@ -395,7 +419,8 @@ public class SendWebsocketFrame : MonoBehaviour {
 				var Jpeg = PopEncodeJpeg.EncodeToJpeg( Image, Width, Height, 4, true );
 				QueueJpeg( Jpeg );
 			};
-			System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend ); 
+			//System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend ); 
+			QueueJob( EncodeJpegAndSend );
 		}
 		else
 		{
