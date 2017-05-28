@@ -438,25 +438,64 @@ public class SendWebsocketFrame : MonoBehaviour {
 			//	gr: executing this on the thread made the display disapear?? but it still worked at a decent frame rate (watching on viewer)
 			System.Action EncodeJpegAndSend = () =>
 			{
-				var Jpeg = PopEncodeJpeg.EncodeToJpeg( Image, Width, Height, 4, true );
-				QueueJpeg( Jpeg );
+				System.Exception PopEncodeJpegException = null;
+				System.Exception LoadRawJpegException = null;
+				try
+				{
+					var Jpeg = PopEncodeJpeg.EncodeToJpeg( Image, Width, Height, 4, true );
+					QueueJpeg( Jpeg );
+					return;
+				}
+				catch(System.Exception e)
+				{
+					PopEncodeJpegException = e;
+				}
+
+				try
+				{
+					//	can only use these on main thread
+					QueueJob( ()=>
+					{
+						if ( ImageTexture == null )
+							ImageTexture = new Texture2D( Width, Height, Format, false );
+		
+						ImageTexture.LoadRawTextureData(Image);
+						//var Jpeg = ImageTexture.EncodeToJPG(50);
+						var Jpeg = ImageTexture.EncodeToPNG();
+						QueueJpeg( Jpeg );
+						return;
+					} );
+				}
+				catch(System.Exception e)
+				{
+					LoadRawJpegException = e;
+				}
+
+				Debug.LogError("Failed to encode jpeg; " + PopEncodeJpegException.Message + ", then " + LoadRawJpegException.Message );
 			};
 
 			if ( EncodeOnMonoThread )
 			{
 				QueueJob( EncodeJpegAndSend );
 			}
+#if WINDOWS_UWP
 			else if ( EncodeViaParallelTask )
 			{
 				System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend );
 			}
+#endif
 			else if ( EncodeViaThreadPool )
 			{
+#if WINDOWS_UWP
 				Windows.System.Threading.ThreadPool.RunAsync( (workitem)=> {	EncodeJpegAndSend(); } );
+#else
+				System.Threading.ThreadPool.QueueUserWorkItem( (workitem)=> {	EncodeJpegAndSend(); } );
+#endif
 			}
 			else
 			{
 				//	dunno how to encode
+				throw new System.Exception("No method of encoding picked");
 			}
 		}
 		else
