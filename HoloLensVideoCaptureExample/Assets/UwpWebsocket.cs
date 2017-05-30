@@ -14,6 +14,8 @@ using Windows.Web;
 using System;	//	System.Uri
 using System.IO;
 
+using Windows.System.Threading;
+
 using System.Runtime.InteropServices.WindowsRuntime;	//	AsBuffer
 using Windows.Storage.Streams;			// DataWriter
 //	https://github.com/Microsoft/Windows-universal-samples/blob/master/Samples/WebSocket/cs/Scenario2_Binary.xaml.cs
@@ -74,7 +76,8 @@ namespace WebSocketSharp
 		MessageWebSocket	socket;
 		Uri					url;
 		DataWriter			MessageWriter;
-
+		System.Threading.Mutex	SendLock;
+		
 		//	one shared data writer;	http://stackoverflow.com/a/39653730
 
 		public WebSocket(string Url)
@@ -84,6 +87,7 @@ namespace WebSocketSharp
 			socket.MessageReceived += OnMessageRecieved;
 			socket.Closed += OnClosed;
 			MessageWriter = new DataWriter( socket.OutputStream );
+			SendLock = new System.Threading.Mutex();
 		}
 	
 		public event EventHandler<CloseEventArgs> OnClose;
@@ -139,29 +143,52 @@ namespace WebSocketSharp
 
 		public void Send(string data)
 		{
-			var SendTask = SendAsyncTask( data );
-			SendTask.Wait();
+			lock(SendLock)
+			{
+				var SendTask = SendAsyncTask( data );
+				SendTask.Wait();
+			};
 		}
 
 		public void Send(byte[] data)
 		{
-			var SendTask = SendAsyncTask( data );
-			SendTask.Wait();
+			lock(SendLock)
+			{
+				var SendTask = SendAsyncTask( data );
+				SendTask.Wait();
+			};
 		}
 
 		public void SendAsync(string data, System.Action<bool> completed)
 		{
-			var SendTask = SendAsyncTask( data );
-
+			ThreadPool.RunAsync( (Handler)=>
+			{
+				lock(SendLock)
+				{
+					var SendTask = SendAsyncTask( data );
+					SendTask.Wait();
+					completed.Invoke(true);
+				};
+				//await Send_Async(data);
+			} );
 			//	todo: launch a task, wait and then send completed
 			//completed.Invoke(true);
 		}
 
 		public void SendAsync(byte[] data, System.Action<bool> completed)
 		{
-			var SendTask = SendAsyncTask( data );
-
-			//await Send_Async(data);
+			ThreadPool.RunAsync( (Handler)=>
+			{
+				lock(SendLock)
+				{
+					var SendTask = SendAsyncTask( data );
+					SendTask.Wait();
+					completed.Invoke(true);
+				};
+				//await Send_Async(data);
+			});
+			
+			
 			//completed.Invoke(true);
 		}
 		
