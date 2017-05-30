@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
+using System.Threading;
 using WebSocketSharp;
 
 using UnityEngine.Events;
@@ -54,6 +54,23 @@ public class JsonCommand_Ping : JsonCommand{
 
 public class SendWebsocketFrame : MonoBehaviour {
 
+	class ByteFrame
+	{
+		public byte[]			Bytes;
+		public int				Width;
+		public int				Height;
+		public TextureFormat	Format;
+
+		public ByteFrame(byte[] _Bytes, int _Width, int _Height, TextureFormat _Format)
+		{
+			Bytes = _Bytes;
+			Width = _Width;
+			Height = _Height;
+			Format = _Format;
+		}
+	
+	}
+
 	public bool	IsServer = true;
 
 	WebSocket	Socket;
@@ -84,7 +101,12 @@ public class SendWebsocketFrame : MonoBehaviour {
 	public float	PingTimeSecs = 10;
 	private float	PingTimeout = 1;
 
+	List<ByteFrame>	EncodeQueue;
+	int				EncodingCount = 0;
+	int				MaxEncoding = 4;
 	List<byte[]>	JpegQueue;
+	int				JpegSendingCount = 0;
+	int				MaxJpegSending = 4;
 
     public void setHost(string host) {
         _hosts = new string[1]{ host };
@@ -105,6 +127,14 @@ public class SendWebsocketFrame : MonoBehaviour {
 		return _hosts[_currentHostIndex];
 	}
 
+	void Start()
+	{
+		if ( JpegQueue == null )
+			JpegQueue = new List<byte[]>();
+		if ( EncodeQueue == null )
+			EncodeQueue = new List<ByteFrame>();
+
+	}
 
 	void Connect(){
 	
@@ -213,26 +243,26 @@ public class SendWebsocketFrame : MonoBehaviour {
 		}
 
 
-		//	ping regularly (to trigger disconnect and notify server)
-		if (Socket != null) {
-        //if (Socket != null && Socket.IsAlive) {
-			PingTimeout -= Time.deltaTime;
-			if (PingTimeout < 0) {
-				var PingJson = JsonUtility.ToJson (new JsonCommand_Ping ());
-				Socket.Send (PingJson);
-				PingTimeout = PingTimeSecs;
-			}
-		}
 
-		if ( JpegQueue == null )
-			JpegQueue = new List<byte[]>();
 
 		try
 		{
-			while ( JpegQueue.Count > 0 )
+			//while ( EncodeQueue.Count > 0 )
+			for ( int i=0;	i<MaxEncoding;	i++ )
+				SendNextEncode();
+			ClearEncodingQueue();
+		}
+		catch(System.Exception e)
+		{
+			Debug.Log("SendNextEncode exception: " + e.Message );
+		}
+
+
+		try
+		{
+			//while ( JpegQueue.Count > 0 )
+			for ( int i=0;	i<MaxJpegSending;	i++ )
 				SendNextJpeg();
-			SendNextJpeg();
-			SendNextJpeg();
 			ClearJpegQueue();
 		}
 		catch(System.Exception e)
@@ -243,14 +273,12 @@ public class SendWebsocketFrame : MonoBehaviour {
 
 	void QueueJpeg(byte[] Jpeg)
 	{
-		if ( JpegQueue == null )
-			JpegQueue = new List<byte[]>();
-
 		lock (JpegQueue)
 		{
 			JpegQueue.Add(Jpeg);
 		}
 	}
+
 
 	void ClearJpegQueue()
 	{
@@ -260,9 +288,17 @@ public class SendWebsocketFrame : MonoBehaviour {
 		}
 	}
 
+	void ClearEncodingQueue()
+	{
+		lock(EncodeQueue)
+		{
+			EncodeQueue.Clear();
+		}
+	}
+
 	void SendNextJpeg()
 	{
-		if ( JpegQueue == null )
+		if ( JpegSendingCount >= MaxJpegSending )
 			return;
 
 		lock (JpegQueue)
@@ -284,10 +320,154 @@ public class SendWebsocketFrame : MonoBehaviour {
 		if ( DebugUpdate )
 			Debug.Log("sending jpeg x" + Jpeg.Length);
 
-		Socket.SendAsync( Jpeg, (Completed)=> { } );
+		Interlocked.Increment( ref JpegSendingCount );
+		Socket.SendAsync( Jpeg, (Completed)=> {
+			Interlocked.Decrement( ref JpegSendingCount );
+		} );
 
 		if ( DebugUpdate )
 			Debug.Log("Done send async jpeg x" + Jpeg.Length);
+	}
+
+	void QueueEncode(ByteFrame Frame)
+	{
+		lock (EncodeQueue)
+		{
+			EncodeQueue.Add(Frame);
+		}
+	}
+
+
+	void DoEncode(ByteFrame Frame)
+	{		
+		//	do encode
+		bool SendTestJpeg = false;
+#if UNITY_EDITOR
+		bool EncodeWithPopEncode = false;
+#else
+		bool EncodeWithPopEncode = true;
+#endif
+		bool EncodeOnMonoThread = false;
+		bool EncodeViaParallelTask = false;
+		bool EncodeViaThreadPool = true;
+
+		if (SendTestJpeg)
+		{
+			Interlocked.Increment( ref EncodingCount );
+			QueueJpeg( jpeg2x2 );
+			Interlocked.Decrement( ref EncodingCount );
+		}
+		else if ( EncodeWithPopEncode )
+		{
+			//	gr: executing this on the thread made the display disapear?? but it still worked at a decent frame rate (watching on viewer)
+			System.Action EncodeJpegAndSend = () =>
+			{
+				System.Exception PopEncodeJpegException = null;
+				System.Exception LoadRawJpegException = null;
+				try
+				{
+					var Jpeg = PopEncodeJpeg.EncodeToJpeg( Frame.Bytes, Frame.Width, Frame.Height, 4, true );
+					QueueJpeg( Jpeg );
+					Interlocked.Decrement( ref EncodingCount );
+					return;
+				}
+				catch(System.Exception e)
+				{
+					PopEncodeJpegException = e;
+				}
+
+				try
+				{
+					//	can only use these on main thread
+					QueueJob( ()=>
+					{
+						if ( ImageTexture == null )
+							ImageTexture = new Texture2D( Frame.Width, Frame.Height, Frame.Format, false );
+		
+						Interlocked.Increment( ref EncodingCount );
+						ImageTexture.LoadRawTextureData(Frame.Bytes);
+						//var Jpeg = ImageTexture.EncodeToJPG(50);
+						var Jpeg = ImageTexture.EncodeToPNG();
+						QueueJpeg( Jpeg );
+						Interlocked.Decrement( ref EncodingCount );
+						return;
+					} );
+				}
+				catch(System.Exception e)
+				{
+					LoadRawJpegException = e;
+				}
+
+				Debug.LogError("Failed to encode jpeg; " + PopEncodeJpegException.Message + ", then " + LoadRawJpegException.Message );
+			};
+
+			if ( EncodeOnMonoThread )
+			{
+				Interlocked.Increment( ref EncodingCount );
+				QueueJob( EncodeJpegAndSend );
+				Interlocked.Decrement( ref EncodingCount );
+			}
+#if WINDOWS_UWP
+			else if ( EncodeViaParallelTask )
+			{
+				Interlocked.Increment( ref EncodingCount );
+				System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend );
+			}
+#endif
+			else if ( EncodeViaThreadPool )
+			{
+				Interlocked.Increment( ref EncodingCount );
+#if WINDOWS_UWP
+				Windows.System.Threading.ThreadPool.RunAsync( (workitem)=> {	EncodeJpegAndSend(); } );
+#else
+				System.Threading.ThreadPool.QueueUserWorkItem( (workitem)=> {	EncodeJpegAndSend(); } );
+#endif
+			}
+			else
+			{
+				//	dunno how to encode
+				throw new System.Exception("No method of encoding picked");
+			}
+		}
+		else
+		{
+			Interlocked.Increment( ref EncodingCount );
+			//	these go wrong on hololens and crash the app
+			if ( ImageTexture == null )
+			{
+				ImageTexture = new Texture2D( Frame.Width, Frame.Height, Frame.Format, false );
+			}
+			ImageTexture.LoadRawTextureData(Frame.Bytes);
+			//var Jpeg = ImageTexture.EncodeToJPG(50);
+			var Jpeg = ImageTexture.EncodeToPNG();
+			QueueJpeg( Jpeg );
+			Interlocked.Decrement( ref EncodingCount );
+		}
+	}
+
+
+	void SendNextEncode()
+	{
+		if ( EncodingCount >= MaxEncoding )
+			return;
+
+		lock (EncodeQueue)
+		{
+			if ( Socket == null )
+				EncodeQueue.Clear();
+
+			if ( EncodeQueue.Count == 0 )
+				return;
+		}
+
+		ByteFrame Frame = null;
+		lock(EncodeQueue)
+		{
+			Frame = EncodeQueue[0];
+			EncodeQueue.RemoveAt(0);
+		};
+	
+		DoEncode( Frame );
 	}
 
 
@@ -415,101 +595,13 @@ public class SendWebsocketFrame : MonoBehaviour {
 	public void SendBytes(byte[] Image,TextureFormat Format,int Width,int Height)
     {
 		Connect();
-		if ( Socket == null )
-			return;
-
-		if ( JpegQueue == null )
-			JpegQueue = new List<byte[]>();
-
-		Socket.Send("New image " + Width + "x" + Height + " format=" + Format + " QueueSize:" + JpegQueue.Count );
-
-		bool SendTestJpeg = false;
-		bool EncodeWithPopEncode = true;
-		bool EncodeOnMonoThread = false;
-		bool EncodeViaParallelTask = false;
-		bool EncodeViaThreadPool = true;
-
-		if (SendTestJpeg)
-		{
-			QueueJpeg( jpeg2x2 );
-		}
-		else if ( EncodeWithPopEncode )
-		{
-			//	gr: executing this on the thread made the display disapear?? but it still worked at a decent frame rate (watching on viewer)
-			System.Action EncodeJpegAndSend = () =>
-			{
-				System.Exception PopEncodeJpegException = null;
-				System.Exception LoadRawJpegException = null;
-				try
-				{
-					var Jpeg = PopEncodeJpeg.EncodeToJpeg( Image, Width, Height, 4, true );
-					QueueJpeg( Jpeg );
-					return;
-				}
-				catch(System.Exception e)
-				{
-					PopEncodeJpegException = e;
-				}
-
-				try
-				{
-					//	can only use these on main thread
-					QueueJob( ()=>
-					{
-						if ( ImageTexture == null )
-							ImageTexture = new Texture2D( Width, Height, Format, false );
 		
-						ImageTexture.LoadRawTextureData(Image);
-						//var Jpeg = ImageTexture.EncodeToJPG(50);
-						var Jpeg = ImageTexture.EncodeToPNG();
-						QueueJpeg( Jpeg );
-						return;
-					} );
-				}
-				catch(System.Exception e)
-				{
-					LoadRawJpegException = e;
-				}
+		if ( Socket != null )
+			Socket.SendAsync("New image " + Width + "x" + Height + " format=" + Format + " JpegQueueSize:" + JpegQueue.Count + "(" + JpegSendingCount + ") EncodeQueueSize:" + EncodeQueue.Count + "(" + EncodingCount + ")", (s)=> { } );
 
-				Debug.LogError("Failed to encode jpeg; " + PopEncodeJpegException.Message + ", then " + LoadRawJpegException.Message );
-			};
-
-			if ( EncodeOnMonoThread )
-			{
-				QueueJob( EncodeJpegAndSend );
-			}
-#if WINDOWS_UWP
-			else if ( EncodeViaParallelTask )
-			{
-				System.Threading.Tasks.Parallel.Invoke( EncodeJpegAndSend );
-			}
-#endif
-			else if ( EncodeViaThreadPool )
-			{
-#if WINDOWS_UWP
-				Windows.System.Threading.ThreadPool.RunAsync( (workitem)=> {	EncodeJpegAndSend(); } );
-#else
-				System.Threading.ThreadPool.QueueUserWorkItem( (workitem)=> {	EncodeJpegAndSend(); } );
-#endif
-			}
-			else
-			{
-				//	dunno how to encode
-				throw new System.Exception("No method of encoding picked");
-			}
-		}
-		else
-		{
-			//	these go wrong on hololens and crash the app
-			if ( ImageTexture == null )
-			{
-				ImageTexture = new Texture2D( Width, Height, Format, false );
-			}
-			ImageTexture.LoadRawTextureData(Image);
-			//var Jpeg = ImageTexture.EncodeToJPG(50);
-			var Jpeg = ImageTexture.EncodeToPNG();
-			QueueJpeg( Jpeg );
-		}
+		QueueEncode( new ByteFrame(Image,Width,Height,Format ) );
+		
+		
     }
 
 	
