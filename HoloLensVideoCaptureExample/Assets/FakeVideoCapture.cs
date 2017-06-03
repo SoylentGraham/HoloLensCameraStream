@@ -8,6 +8,10 @@ using UnityEngine.Events;
 
 public class FakeVideoCapture : MonoBehaviour {
 
+	[Range(1.0f,60.0f)]
+	public float				FrameRate = 30;
+	float						FrameCountdown = 0;
+
 	public UnityEvent_ImageWidthHeight	OnNewFrame;
 
 	[Range(1,100)]
@@ -28,6 +32,17 @@ public class FakeVideoCapture : MonoBehaviour {
 	}
 
 	void Update ()
+	{
+		FrameCountdown -= Time.deltaTime;
+
+		if ( FrameCountdown > 0 )
+			return;
+
+		SendNextFrame();
+		FrameCountdown += 1.0f / FrameRate;
+	}
+
+	void SendNextFrame()
 	{
 		ColourIndex++;
 		var Colour = ColourCycle[ ColourIndex%ColourCycle.Count];
