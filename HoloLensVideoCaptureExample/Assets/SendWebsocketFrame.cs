@@ -111,6 +111,8 @@ public class SendWebsocketFrame : MonoBehaviour {
 	int				JpegSendingCount = 0;
 	int				MaxJpegSending = 4;
 
+	public bool		PopEncodeJpegAsRgb = true;
+
     public void setHost(string host) {
         _hosts = new string[1]{ host };
     }
@@ -369,7 +371,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 				System.Exception LoadRawJpegException = null;
 				try
 				{
-					var Jpeg = PopEncodeJpeg.EncodeToJpeg( Frame.Bytes, Frame.Width, Frame.Height, 4, true );
+					var Jpeg = PopEncodeJpeg.EncodeToJpeg( Frame.Bytes, Frame.Width, Frame.Height, 4, PopEncodeJpegAsRgb );
 					Frame.Dispose();
 					QueueJpeg( Jpeg );
 					Interlocked.Decrement( ref EncodingCount );
@@ -483,29 +485,10 @@ public class SendWebsocketFrame : MonoBehaviour {
 	}
 
 
-	void RegisterClient(){
-		SetStatus ("Registering client");
-		if ( Socket == null )
-			Debug.LogWarning("Registering client - null socket");
-		else
-			Socket.Send ("iamclient");
-	}
-
-	void RegisterServer(){
-		SetStatus ("Registering server");
-		if ( Socket == null )
-			Debug.LogWarning("Registering server - null socket");
-		else
-			Socket.Send ("iamserver");
-	}
-
+	
 	void OnConnected(){
 		SetStatus ("Connected");
 
-		if ( IsServer )
-			RegisterServer();
-		else
-			RegisterClient ();
 	}
 
 	void OnTextMessage(string Message){
@@ -611,8 +594,14 @@ public class SendWebsocketFrame : MonoBehaviour {
 		if ( Socket != null )
 			Socket.SendAsync("New image " + Width + "x" + Height + " format=" + Format + " JpegQueueSize:" + JpegQueue.Count + "(" + JpegSendingCount + ") EncodeQueueSize:" + EncodeQueue.Count + "(" + EncodingCount + ")", (s)=> { } );
 
-		QueueEncode( new ByteFrame(Image,Width,Height,Format ) );
-		
+		try
+		{
+			QueueEncode( new ByteFrame(Image,Width,Height,Format ) );
+		}
+		catch(System.Exception e)
+		{
+			Debug.LogException(e);
+		}	
 		
     }
 

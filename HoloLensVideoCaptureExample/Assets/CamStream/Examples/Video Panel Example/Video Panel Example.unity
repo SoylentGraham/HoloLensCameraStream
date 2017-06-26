@@ -981,7 +981,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   IsServer: 1
   _hosts:
-  - localhost:8080
+  - 192.168.1.66:8081
   RetryTimeSecs: 5
   OnPlayFilename:
     m_PersistentCalls:
@@ -995,6 +995,7 @@ MonoBehaviour:
       PublicKeyToken=null
   StatusText: {fileID: 0}
   PingTimeSecs: 10
+  PopEncodeJpegAsRgb: 0
 --- !u!4 &1827513121
 Transform:
   m_ObjectHideFlags: 0
