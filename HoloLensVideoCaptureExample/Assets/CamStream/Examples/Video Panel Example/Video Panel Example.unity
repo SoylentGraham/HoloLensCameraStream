@@ -809,6 +809,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 88c17a040504151458c8f943b6950cac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  FrameRate: 15
   OnNewFrame:
     m_PersistentCalls:
       m_Calls:
@@ -980,7 +981,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   IsServer: 1
   _hosts:
-  - 192.168.1.128:8080
+  - localhost:8080
   RetryTimeSecs: 5
   OnPlayFilename:
     m_PersistentCalls:

@@ -7,9 +7,6 @@ using WebSocketSharp;
 using UnityEngine.Events;
 
 
-[System.Serializable]
-public class UnityEvent_String : UnityEvent <string> {}
-
 
 [System.Serializable]
 public class JsonCommand{
@@ -63,12 +60,18 @@ public class SendWebsocketFrame : MonoBehaviour {
 
 		public ByteFrame(byte[] _Bytes, int _Width, int _Height, TextureFormat _Format)
 		{
-			Bytes = _Bytes;
+			Bytes = BytePool.Global.Alloc(_Bytes);
 			Width = _Width;
 			Height = _Height;
 			Format = _Format;
 		}
-	
+
+		public void Dispose()
+		{
+			BytePool.Global.Release( Bytes );
+			Bytes = null;
+		}
+
 	}
 
 	public bool	IsServer = true;
@@ -367,6 +370,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 				try
 				{
 					var Jpeg = PopEncodeJpeg.EncodeToJpeg( Frame.Bytes, Frame.Width, Frame.Height, 4, true );
+					Frame.Dispose();
 					QueueJpeg( Jpeg );
 					Interlocked.Decrement( ref EncodingCount );
 					return;
@@ -386,6 +390,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 		
 						Interlocked.Increment( ref EncodingCount );
 						ImageTexture.LoadRawTextureData(Frame.Bytes);
+						Frame.Dispose();
 						//var Jpeg = ImageTexture.EncodeToJPG(50);
 						var Jpeg = ImageTexture.EncodeToPNG();
 						QueueJpeg( Jpeg );
@@ -399,6 +404,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 				}
 
 				Debug.LogError("Failed to encode jpeg; " + PopEncodeJpegException.Message + ", then " + LoadRawJpegException.Message );
+				Frame.Dispose();
 			};
 
 			if ( EncodeOnMonoThread )
@@ -425,6 +431,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 			}
 			else
 			{
+				Frame.Dispose();
 				//	dunno how to encode
 				throw new System.Exception("No method of encoding picked");
 			}
@@ -438,6 +445,7 @@ public class SendWebsocketFrame : MonoBehaviour {
 				ImageTexture = new Texture2D( Frame.Width, Frame.Height, Frame.Format, false );
 			}
 			ImageTexture.LoadRawTextureData(Frame.Bytes);
+			Frame.Dispose();
 			//var Jpeg = ImageTexture.EncodeToJPG(50);
 			var Jpeg = ImageTexture.EncodeToPNG();
 			QueueJpeg( Jpeg );
@@ -454,7 +462,11 @@ public class SendWebsocketFrame : MonoBehaviour {
 		lock (EncodeQueue)
 		{
 			if ( Socket == null )
+			{
+				foreach( var f in EncodeQueue )
+					f.Dispose();
 				EncodeQueue.Clear();
+			}
 
 			if ( EncodeQueue.Count == 0 )
 				return;

@@ -1,33 +1,12 @@
 ﻿using UnityEngine;
 using HoloLensCameraStream;
 using UnityEngine.Events;
-
+using System.Collections.Generic;
 
 [System.Serializable]
 public class UnityEvent_ImageWidthHeight : UnityEvent <byte[],TextureFormat,int,int> {}
 
 
-public class BytePool
-{
-	static byte[]	Buffer;
-
-	public static byte[]	Alloc(int Size)
-	{
-		if ( Buffer != null )
-			if ( Buffer.Length != Size )
-				Buffer = null;
-
-		if ( Buffer == null )
-			Buffer = new byte[Size];
-
-		return Buffer;
-	}
-
-	public static void		Release(byte[] ReleasedBuffer)
-	{
-
-	}	
-};
 
 
 /// <summary>
@@ -113,7 +92,7 @@ public class VideoPanelApp : MonoBehaviour
 
     void OnFrameSampleAcquired(VideoCaptureSample sample)
     {
-		var Bytes = BytePool.Alloc( sample.dataLength );
+		var Bytes = BytePool.Global.Alloc( sample.dataLength );
         sample.CopyRawImageDataIntoBuffer(Bytes);
         sample.Dispose();
 
@@ -124,6 +103,7 @@ public class VideoPanelApp : MonoBehaviour
         UnityEngine.WSA.Application.InvokeOnAppThread(() =>
         {
 			OnNewFrameMonoThread.Invoke( Bytes, TextureFormat.BGRA32, _resolution.width, _resolution.height );
+			BytePool.Global.Release(Bytes);
         }, false);
     }
 }

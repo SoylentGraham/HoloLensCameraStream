@@ -47,7 +47,7 @@ public class FakeVideoCapture : MonoBehaviour {
 		ColourIndex++;
 		var Colour = ColourCycle[ ColourIndex%ColourCycle.Count];
 		int ComponentCount = 4;
-		var Bytes = BytePool.Alloc(Width*Height*ComponentCount);
+		var Bytes = BytePool.Global.Alloc(Width*Height*ComponentCount);
 		
 		for (int b = 0; b < Bytes.Length; b += ComponentCount)
 		{
@@ -59,6 +59,6 @@ public class FakeVideoCapture : MonoBehaviour {
 		
 		OnNewFrame.Invoke( Bytes, TextureFormat.BGRA32, Width, Height );
 
-		BytePool.Release( Bytes );
+		BytePool.Global.Release( Bytes );
 	}
 }

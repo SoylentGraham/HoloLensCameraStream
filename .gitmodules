@@ -1,0 +1,3 @@
+[submodule "HoloLensVideoCaptureExample/Assets/PopUnityCommon"]
+	path = HoloLensVideoCaptureExample/Assets/PopUnityCommon
+	url = https://github.com/SoylentGraham/PopUnityCommon.git
